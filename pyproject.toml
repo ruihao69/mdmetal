@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mdmetal"
+version = "0.0.1"
+authors = [
+  { name="Rui-Hao Bi", email="biruihao@westlake.edu.cn" },
+]
+description = "A pedagogical project to explore the Independent Electron Surface Hopping (IESH) algorithm applied to metal surface non-adiabatic dynamics."
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "joblib"
+]
