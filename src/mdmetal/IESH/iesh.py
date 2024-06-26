@@ -33,6 +33,9 @@ def evaluate_hamiltonian_adiabatic(
     last_phase_corr: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     H, grad_H = h_obj.evaluate(R, is_CI=False)
+    E0 = h_obj.get_U0(R)
+    F0 = -h_obj.get_grad_U0(R)
+    # E0 = F0 = 0.0
     
     evals, evecs = LA.eigh(H)
     
@@ -49,13 +52,14 @@ def evaluate_hamiltonian_adiabatic(
     
     v_dot_d = P * d / h_obj.mass
     
-    return c, evals, evecs, d, F, v_dot_d, phase_corr
+    return c, evals, evecs, d, F, v_dot_d, phase_corr, E0, F0
 
 def P_dot(
     F: NDArray[np.float64],
+    F0: NDArray[np.float64],
     active_state: NDArray[np.int64],
 ) -> NDArray[np.float64]:
-    return sum(F[i] for i in active_state)
+    return sum(F[i] - F0 for i in active_state) + F0
 
 def IESH_hop(
     c: NDArray[np.complex128],
@@ -159,6 +163,8 @@ def verlet_iesh(
     last_v_dot_d: NDArray[np.float64],
     last_F: NDArray[np.float64],
     last_phase_corr: NDArray[np.float64],
+    last_E0: float,
+    last_F0: float,
 ):
     # unpack some parameters 
     mass = h_obj.mass
@@ -168,10 +174,10 @@ def verlet_iesh(
     D = h_obj.kT * gamma * mass
     sigma = np.sqrt(2 * D / dt)
     dP_langevin = dt * (-gamma * P + sigma * np.random.normal(0, 1))
-    dP_langevin = 0
+    # dP_langevin = 0
     
     # first half step for c and P
-    P += 0.5 * dt * P_dot(last_F, active_state) + 0.5 * dP_langevin
+    P += 0.5 * dt * P_dot(last_F, last_F0, active_state) + 0.5 * dP_langevin
     
     c, hopping_flag, target_state, term_1e = quantum_rk4(c, active_state, last_evals, last_v_dot_d, 0.5*dt, h_obj.states)
     
@@ -192,7 +198,7 @@ def verlet_iesh(
     R += dt * P / mass
     
     # re-evaluate the hamiltonian
-    c, evals, evecs, d, F, v_dot_d, phase_corr = evaluate_hamiltonian_adiabatic(R, P, c, h_obj, last_evecs, last_phase_corr)
+    c, evals, evecs, d, F, v_dot_d, phase_corr, E0, F0 = evaluate_hamiltonian_adiabatic(R, P, c, h_obj, last_evecs, last_phase_corr)
     
     
     # second half step for c and P
@@ -211,7 +217,7 @@ def verlet_iesh(
         else:
             P = -P # as suggested by Tully, always reverse the momentum
     
-    P += 0.5 * dt * P_dot(F, active_state) + 0.5 * dP_langevin
+    P += 0.5 * dt * P_dot(F, F0, active_state) + 0.5 * dP_langevin
     
     # re-evaluate the v_dot_d
     v_dot_d = P * d / mass
@@ -220,7 +226,7 @@ def verlet_iesh(
     
     # raise ValueError("Stop here")
     
-    return t, R, P, c, active_state, evals, evecs, d, F, v_dot_d, phase_corr 
+    return t, R, P, c, active_state, evals, evecs, d, F, v_dot_d, phase_corr, E0, F0
 
 def dynamics_one(
     R0: float,
@@ -271,7 +277,7 @@ def dynamics_one(
     #     c[active_state[ie], ie] = 1.0
         
     
-    c, evals, evecs, d, F, v_dot_d, phase_corr = evaluate_hamiltonian_adiabatic(R, P, c, hami, None, None)
+    c, evals, evecs, d, F, v_dot_d, phase_corr, E0, F0 = evaluate_hamiltonian_adiabatic(R, P, c, hami, None, None)
     
     for istep in range(nsteps):
         if istep % out_freq == 0:
@@ -280,10 +286,10 @@ def dynamics_one(
             R_out[iout] = R
             P_out[iout] = P
             KE_out[iout] = 0.5 * P**2 / mass 
-            PE_out[iout] = np.sum(evals[active_state])
+            PE_out[iout] = np.sum(evals[active_state] - E0) + E0
             pop_out[iout] = populations_iesh_landry(c, evecs, active_state)
             
-        t, R, P, c, active_state, evals, evecs, d, F, v_dot_d, phase_corr = verlet_iesh(t, R, P, c, active_state, dt, hami, evals, evecs, d, v_dot_d, F, phase_corr)
+        t, R, P, c, active_state, evals, evecs, d, F, v_dot_d, phase_corr, E0, F0 = verlet_iesh(t, R, P, c, active_state, dt, hami, evals, evecs, d, v_dot_d, F, phase_corr, E0, F0)
         # print(f"{np.sum(np.abs(c)**2, axis=0)=}")
         # print(f"{R=}, {P=}, {np.sum(np.abs(c)**2, axis=0)=}")
         
@@ -295,7 +301,7 @@ def _test_main():
     no = hamiltonian.no
     ne = hamiltonian.ne
     
-    np.random.seed(0)
+    np.random.seed(2)
     
     sigma_R = np.sqrt(hamiltonian.kT / hamiltonian.mass) / hamiltonian.omega_B
     sigma_P = np.sqrt(hamiltonian.kT * hamiltonian.mass)

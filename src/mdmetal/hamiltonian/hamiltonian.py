@@ -144,15 +144,16 @@ class NewnsAndersonHarmonic:
     omega_B: float = 2e-4     # harmonic oscillator frequency
     # gamma: float = 1.0        # langevin bath friction
     gamma: float = omega_B * 2.0
-    Gamma: float = 1e-5       # metal-molecule coupling (wide-band limit)
-    # Gamma: float = 2e-4       # metal-molecule coupling (wide-band limit)
+    # Gamma: float = 1e-5       # metal-molecule coupling (wide-band limit)
+    Gamma: float = 1e-4       # metal-molecule coupling (wide-band limit)
     # Gamma: float = 2e-4
-    # Er: float = 0.00125       # reorganization energy
+    Er: float = 0.00125       # reorganization energy
     dG: float = -0.0038       # electronic energy difference
     kT: float = 0.00095       # thermal energy
-    W: float = 16e-3          # electron bath bandwidth
-    # g: float = (2*Er / mass / omega_B**2)**0.5 # electron-vibration coupling
-    g: float = 20.6097
+    # W: float = 16e-3          # electron bath bandwidth
+    W: float = 2e-2         # electron bath bandwidth
+    g: float = (2*Er / mass / omega_B**2)**0.5 # electron-vibration coupling
+    # g: float = 20.6097
     V: float = np.sqrt(0.5 * Gamma / np.pi) # system-electronic bath coupling
 
     @classmethod
@@ -163,9 +164,9 @@ class NewnsAndersonHarmonic:
         vk = np.sqrt(W * weights) / 2
         vk = np.concatenate((vk, vk))
 
-        # argsort = np.argsort(ek)
-        # ek = ek[argsort]
-        # vk = vk[argsort]
+        argsort = np.argsort(ek)
+        ek = ek[argsort]
+        vk = vk[argsort]
 
         no = nk * 2 + 1 # number of orbitals = bath orbitals + system orbital (1-level)
         state_list = []
@@ -216,8 +217,20 @@ class NewnsAndersonHarmonic:
             raise ValueError("Number of states is large, CI simulation is impractical.")
         return get_quad_hamiltonian_CI(grad_h, self.states)
     
+    def get_U0(
+        self,
+        R: float,
+    ) -> float:
+        return U0(R, self.mass, self.omega_B)   
+    
+    def get_grad_U0(
+        self,
+        R: float,
+    ) -> float:
+        return grad_U0(R, self.mass, self.omega_B)
+
     def evaluate(
-        self,        
+        self,
         R: float,
         is_CI: bool,
     ):
@@ -239,6 +252,35 @@ def main():
     nk = 2
     ne = 2
     model = NewnsAndersonHarmonic.initialize(nk, ne, 0.00095, 16e-3, 1e-5, 2000.0)
+    print(model.ek)
+    print(model.V * model.vk)
+    
+    print(model.g)
+
+    R_TEST = 1.0
+    V_TEST = 1.0
+    H_test = model.get_H_one_electron(R_TEST)
+    gradH_test = model.get_grad_H_one_electron(R_TEST)
+    evals, evecs = LA.eigh(H_test)
+    E_cl = 0.5 * model.mass * model.omega_B**2*R_TEST**2
+    grad_cl = model.mass * model.omega_B**2*R_TEST
+    print(f"{H_test.flatten()=}")
+    print(f"{evals=}")
+    print(f"{evals-E_cl=}")
+    print(f"{gradH_test.flatten()=}")
+    grad_H_diff = gradH_test - np.diagflat([grad_cl for _ in range(gradH_test.shape[0])])
+    print(f"{grad_H_diff=}")
+    # nac, F, F_hf= evaluate_nonadiabatic_couplings_1d(grad_H_diff, evals, evecs)
+    nac, F, F_hf= evaluate_nonadiabatic_couplings_1d(gradH_test, evals, evecs)
+    print(f"{nac.flatten()=}")
+    vdotd = nac * V_TEST
+    print(f"{vdotd.flatten()=}")
+    state = np.array([1, 2])
+    acc = sum(F[iorb] / model.mass for iorb in state )
+    print(f"acc={acc}")
+    F_cl = -grad_cl / model.mass
+    print(f"{F_cl=}")
+
     L = 30
     R = np.linspace(-L, L, 5000)
 
@@ -257,62 +299,62 @@ def main():
         grad_H_list[ii] = model.get_grad_H_one_electron(r)
         nac_list[ii] = evaluate_nonadiabatic_couplings_1d(grad_H_list[ii], E_list[ii], evecs_list[ii])[0]
 
-    fig = plt.figure(figsize=(16, 6), dpi=300)
-    ax = fig.add_subplot(121)
-    # for ii in range(model.no):
-    for ii in [2, 3]:
-        ax.plot(R, E_list[:, ii], label=f"Orbital {ii}")
-    ax.set_xlabel("R")
-    ax.set_ylabel("Energy")
-    ax.legend()
-    ax.set_xlim(-10, 20)
-    ax.set_ylim(-0.02, 0.05)
-    ax = fig.add_subplot(122)
-    # for ii in range(model.no):
-    ii = 0
-    for jj in range(ii+1, model.no):
-        ax.plot(R, nac_list[:, ii, jj], label=f"Orbital {ii} -> {jj}")
-    ax.set_xlim(-10, 20)
-    plt.show()
-
-    H_CI_list = np.zeros((R.size, model.states.shape[0], model.states.shape[0]))
-    E_CI_list = np.zeros((R.size, model.states.shape[0]))
-    evecs_CI_list = np.zeros((R.size, model.states.shape[0], model.states.shape[0]))
-    grad_H_CI_list = np.zeros((R.size, model.states.shape[0], model.states.shape[0]))
-    nac_CI_list = np.zeros((R.size, model.states.shape[0], model.states.shape[0]))
-    for ii, r in enumerate(R):
-        H_CI_list[ii] = model.get_H_CI(H_list[ii])
-        # E_CI_list[ii], evecs_CI_list[ii] = np.linalg.eigh(H_CI_list[ii])
-        E_CI_list[ii], evecs_CI_list[ii] = LA.eigh(H_CI_list[ii])
-        if ii > 0:
-            evecs_CI_list[ii] = align_phase(evecs_CI_list[ii-1], evecs_CI_list[ii])
-        # grad_H_CI = model.get_grad_H_CI(grad_H_list[ii])
-        # grad_H_CI_list[ii] = grad_H_CI
-        # nac_CI, _, _ = evaluate_nonadiabatic_couplings(grad_H_CI[..., None], E_CI_list[ii], evecs_CI_list[ii])
-        # nac_CI_list[ii] = nac_CI[:, :, 0]
-        grad_H_CI_list[ii] = model.get_grad_H_CI(grad_H_list[ii])
-        nac_CI_list[ii] = evaluate_nonadiabatic_couplings_1d(grad_H_CI_list[ii], E_CI_list[ii], evecs_CI_list[ii])[0]
-
-
-    fig = plt.figure(figsize=(16, 6), dpi=300)
-    ax = fig.add_subplot(121)
-    # for ii in range(model.states.shape[0]):
-    for ii in [2, 3]:
-        ax.plot(R, E_CI_list[:, ii], label=f"State {model.states[ii]}")
-    ax.set_xlabel("R")
-    ax.set_ylabel("Energy")
-    ax.set_xlim(-10, 20)
-    ax.set_ylim(-0.02, 0.05)
-    ax.legend()
-    ax = fig.add_subplot(122)
-    for ii in range(model.states.shape[0]):
-        for jj in range(ii+1, model.states.shape[0]):
+    # fig = plt.figure(figsize=(16, 6), dpi=300)
+    # ax = fig.add_subplot(121)
+    # # for ii in range(model.no):
+    # for ii in [2, 3]:
+    #     ax.plot(R, E_list[:, ii], label=f"Orbital {ii}")
+    # ax.set_xlabel("R")
+    # ax.set_ylabel("Energy")
+    # ax.legend()
+    # ax.set_xlim(-10, 20)
+    # ax.set_ylim(-0.02, 0.05)
+    # ax = fig.add_subplot(122)
+    # # for ii in range(model.no):
     # ii = 0
-    # for jj in range(ii+1, model.states.shape[0]):
-            ax.plot(R, nac_CI_list[:, ii, jj], label=f"State {model.states[ii]} -> {model.states[jj]}")
-    # ax.set_xlim(-5, 15)
+    # for jj in range(ii+1, model.no):
+    #     ax.plot(R, nac_list[:, ii, jj], label=f"Orbital {ii} -> {jj}")
+    # ax.set_xlim(-10, 20)
+    # plt.show()
 
-    plt.show()
+    # H_CI_list = np.zeros((R.size, model.states.shape[0], model.states.shape[0]))
+    # E_CI_list = np.zeros((R.size, model.states.shape[0]))
+    # evecs_CI_list = np.zeros((R.size, model.states.shape[0], model.states.shape[0]))
+    # grad_H_CI_list = np.zeros((R.size, model.states.shape[0], model.states.shape[0]))
+    # nac_CI_list = np.zeros((R.size, model.states.shape[0], model.states.shape[0]))
+    # for ii, r in enumerate(R):
+    #     H_CI_list[ii] = model.get_H_CI(H_list[ii])
+    #     # E_CI_list[ii], evecs_CI_list[ii] = np.linalg.eigh(H_CI_list[ii])
+    #     E_CI_list[ii], evecs_CI_list[ii] = LA.eigh(H_CI_list[ii])
+    #     if ii > 0:
+    #         evecs_CI_list[ii] = align_phase(evecs_CI_list[ii-1], evecs_CI_list[ii])
+    #     # grad_H_CI = model.get_grad_H_CI(grad_H_list[ii])
+    #     # grad_H_CI_list[ii] = grad_H_CI
+    #     # nac_CI, _, _ = evaluate_nonadiabatic_couplings(grad_H_CI[..., None], E_CI_list[ii], evecs_CI_list[ii])
+    #     # nac_CI_list[ii] = nac_CI[:, :, 0]
+    #     grad_H_CI_list[ii] = model.get_grad_H_CI(grad_H_list[ii])
+    #     nac_CI_list[ii] = evaluate_nonadiabatic_couplings_1d(grad_H_CI_list[ii], E_CI_list[ii], evecs_CI_list[ii])[0]
+
+
+    # fig = plt.figure(figsize=(16, 6), dpi=300)
+    # ax = fig.add_subplot(121)
+    # # for ii in range(model.states.shape[0]):
+    # for ii in [2, 3]:
+    #     ax.plot(R, E_CI_list[:, ii], label=f"State {model.states[ii]}")
+    # ax.set_xlabel("R")
+    # ax.set_ylabel("Energy")
+    # ax.set_xlim(-10, 20)
+    # ax.set_ylim(-0.02, 0.05)
+    # ax.legend()
+    # ax = fig.add_subplot(122)
+    # for ii in range(model.states.shape[0]):
+    #     for jj in range(ii+1, model.states.shape[0]):
+    # # ii = 0
+    # # for jj in range(ii+1, model.states.shape[0]):
+    #         ax.plot(R, nac_CI_list[:, ii, jj], label=f"State {model.states[ii]} -> {model.states[jj]}")
+    # # ax.set_xlim(-5, 15)
+
+    # plt.show()
 
 
 # %%

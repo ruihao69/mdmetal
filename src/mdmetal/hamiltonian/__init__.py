@@ -1,4 +1,5 @@
 from .hamiltonian import NewnsAndersonHarmonic
+from .hamiltonian import numba_setdiff1d
 from .utils import evaluate_nonadiabatic_couplings_1d
 from .utils import get_phase_correction
 from .utils import phase_correct_nac 
@@ -9,6 +10,7 @@ from .utils import state_reordering
 
 __all__ = [
     "NewnsAndersonHarmonic",
+    "numba_setdiff1d",
     "evaluate_nonadiabatic_couplings_1d",
     "get_phase_correction",
     "phase_correct_nac", 
