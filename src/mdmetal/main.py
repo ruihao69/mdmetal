@@ -91,9 +91,10 @@ def main():
         from mdmetal.CI.ehrenfest_diabatic import dynamics_one as runner
     elif inp.method == Method.CI_EH_A:
         from mdmetal.CI.ehrenfest_adiabatic import dynamics_one as runner
-    elif inp.method == Method.CI_SH_A:
+    elif inp.method == Method.CI_FSSH:
         # from mdmetal.CI.surface_hopping_adiabatic import dynamics_one as runner
-        raise NotImplementedError("Surface hopping is not implemented yet")
+        # raise NotImplementedError("Surface hopping is not implemented yet")
+        from mdmetal.CI.fssh import dynamics_one as runner
     elif inp.method == Method.IESH:
         from mdmetal.IESH.iesh import dynamics_one as runner
     else:

@@ -9,12 +9,12 @@ import warnings
 class Method(Enum):
     CI_EH_D = "CI-Eh-D"
     CI_EH_A = "CI-Eh-A"
-    CI_SH_A = "CI-SH-A"
+    CI_FSSH = "CI-FSSH"
     IESH = "IESH"
     
     @property
     def is_CI(self):
-        return self in [Method.CI_EH_D, Method.CI_EH_A, Method.CI_SH_A]
+        return self in [Method.CI_EH_D, Method.CI_EH_A, Method.CI_FSSH]
     
     @property
     def is_IESH(self):

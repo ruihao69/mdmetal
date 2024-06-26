@@ -40,6 +40,7 @@ def evalute_hamiltonian_adiabatic(
     last_evecs: NDArray[np.float64],
     last_phase_corr: NDArray[np.float64],
 ) -> NDArray[np.float64]:
+    # print(f"{R=}, {P=}") 
     H, grad_H = h_obj.evaluate(R, is_CI=True)
     
     evals, evecs = LA.eigh(H)

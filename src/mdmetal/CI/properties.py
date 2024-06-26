@@ -25,3 +25,19 @@ def compute_KE(P, mass):
 
 def compute_PE_ehrenfest(evals, c):
     return np.dot(evals * c.conj(), c).real
+
+@njit
+def compute_surface_hopping_pop(
+    active_state: int,
+    c: np.ndarray,
+    U: np.ndarray,
+) -> np.ndarray:
+    ns = c.shape[0]
+    rho = np.outer(c, c.conj()) 
+    populations = np.zeros(ns, dtype=np.float64)
+    for istate in range(ns):
+        populations[istate] += np.abs(U[istate, active_state])**2
+        for jj in range(ns):
+            for kk in range(jj+1, ns):
+                populations[istate] += 2.0 * np.real(U[istate, jj] * np.conj(U[istate, kk]) * rho[jj, kk])
+    return populations  
