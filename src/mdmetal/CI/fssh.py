@@ -16,7 +16,7 @@ def P_dot(
     F: NDArray[np.float64],
     active_state: int
 ) -> np.float64:
-    return F[active_state]
+    return F[active_state, active_state]
 
 @njit
 def compute_hopping_prob(
@@ -130,6 +130,7 @@ def verlet_ci_fssh(
     last_d: NDArray[np.float64],
     last_v_dot_d: NDArray[np.float64],
     last_F: NDArray[np.float64],
+    last_F0: NDArray[np.float64],
     last_phase_corr: NDArray[np.float64],
 ):
     # unpack some parameters 
@@ -140,9 +141,10 @@ def verlet_ci_fssh(
     D = h_obj.kT * gamma * mass
     sigma = np.sqrt(2 * D / dt)
     dP_langevin = dt * (-gamma * P + sigma * np.random.normal(0, 1))
+    # dP_langevin = 0
     
     # first half step for c and P
-    P += 0.5 * dt * P_dot(last_F, active_state) + 0.5 * dP_langevin
+    P += 0.5 * dt * P_dot(last_F, active_state) + 0.5 * dP_langevin + 0.5 * dt * last_F0
     
     c, hopping_flag, target_state = quantum_rk4(c, active_state, last_evals, last_v_dot_d, dt, last_order)
     
@@ -160,7 +162,7 @@ def verlet_ci_fssh(
     R += dt * P / mass
     
     # re-evaluate the hamiltonian
-    c, evals, evecs, d, F, v_dot_d, phase_corr, order = evalute_hamiltonian_adiabatic(R, P, c, h_obj, last_evecs, last_phase_corr)
+    c, evals, evecs, d, F, F0, v_dot_d, phase_corr, order = evalute_hamiltonian_adiabatic(R, P, c, h_obj, last_evecs, last_phase_corr)
     
     # update c
     c, hopping_flag, target_state = quantum_rk4(c, active_state, evals, v_dot_d, 0.5 * dt, order)
@@ -175,14 +177,14 @@ def verlet_ci_fssh(
             P = -P
      
     # second half step for P
-    P += 0.5 * dt * P_dot(F, active_state) + 0.5 * dP_langevin
+    P += 0.5 * dt * P_dot(F, active_state) + 0.5 * dP_langevin + 0.5 * dt * F0
     
     # re-evaluate the v_dot_d
     v_dot_d = P * d / mass
     
     t += dt
     
-    return t, R, P, c, active_state, evals, evecs, d, F, v_dot_d, phase_corr, order
+    return t, R, P, c, active_state, evals, evecs, d, F, F0, v_dot_d, phase_corr, order
 
 def dynamics_one(
     R0: float,
@@ -221,7 +223,7 @@ def dynamics_one(
     active_state = np.random.choice(nstates, p=prob)
     
     # evaluate the hamiltonian
-    c, evals, evecs, d, F, v_dot_d, phase_corr, order = evalute_hamiltonian_adiabatic(R, P, c, h_obj, None, None)
+    c, evals, evecs, d, F, F0, v_dot_d, phase_corr, order = evalute_hamiltonian_adiabatic(R, P, c, h_obj, None, None)
     
     for istep in range(nsteps):
         if istep % out_freq == 0:
@@ -232,9 +234,9 @@ def dynamics_one(
             diab_pop = compute_surface_hopping_pop(active_state, c, evecs)
             pop_out[iout] = reduce_state_populations(diab_pop, h_obj.no, h_obj.states)
             KE_out[iout] = compute_KE(P, mass)
-            PE_out[iout] = evals[active_state] 
+            PE_out[iout] = evals[active_state] + hami.get_U0(R)
         
-        t, R, P, c, active_state, evals, evecs, d, F, v_dot_d, phase_corr, order = verlet_ci_fssh(t, R, P, c, active_state, dt, hami, order, evals, evecs, d, v_dot_d, F, phase_corr)
+        t, R, P, c, active_state, evals, evecs, d, F, F0, v_dot_d, phase_corr, order = verlet_ci_fssh(t, R, P, c, active_state, dt, hami, order, evals, evecs, d, v_dot_d, F, F0, phase_corr)
     
     return t_out, R_out, P_out, KE_out, PE_out, pop_out
 

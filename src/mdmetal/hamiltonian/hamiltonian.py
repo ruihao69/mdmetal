@@ -25,9 +25,10 @@ def one_electron_newns_anderson(
     H = np.zeros((no, no), dtype=np.float64)
     for ii in range(no):
         if ii == 0:
-            H[ii, ii] += U1
+            H[ii, ii] += (U1 - U0) # only have the state inidependent
+                                   # potential in the Hamiltonian
         else:
-            H[ii, ii] += ek[ii-1] + U0
+            H[ii, ii] += ek[ii-1] 
             H[ii, 0] = H[0, ii] = V * vk[ii-1]
     return H
 
@@ -40,9 +41,8 @@ def one_electron_newns_anderson_grad(
     grad_H = np.zeros((no, no), dtype=np.float64)
     for ii in range(no):
         if ii == 0:
-            grad_H[ii, ii] = dU1
-        else:
-            grad_H[ii, ii] = dU0
+            grad_H[ii, ii] = dU1 - dU0 # only have the state inidependent
+                                       # potential in the Hamiltonian
     return grad_H
 
 @njit
@@ -125,9 +125,6 @@ def align_phase(prev_evecs, curr_evecs):
         phase_factors[mask] = diag_tmp[mask] / np.abs(diag_tmp[mask])
         aligned_evecs = curr_evecs / phase_factors
         return aligned_evecs
-
-
-
 
 @dataclass
 class NewnsAndersonHarmonic:
@@ -286,10 +283,12 @@ def main():
 
     H_list = np.zeros((R.size, model.no, model.no))
     E_list = np.zeros((R.size, model.no))
+    E0_list = np.zeros((R.size, model.no)) # state-independent potential
     evecs_list = np.zeros((R.size, model.no, model.no))
     grad_H_list = np.zeros((R.size, model.no, model.no))
     nac_list = np.zeros((R.size, model.no, model.no))
     for ii, r in enumerate(R):
+        E0_list[ii] = model.get_U0(r)
         H_list[ii] = model.get_H_one_electron(r)
         # E_list[ii], evecs_list[ii] = np.linalg.eigh(H_list[ii])
         E_list[ii], evecs_list[ii] = LA.eigh(H_list[ii])
@@ -298,63 +297,69 @@ def main():
         # grad_H = model.get_grad_H_one_electron(r)
         grad_H_list[ii] = model.get_grad_H_one_electron(r)
         nac_list[ii] = evaluate_nonadiabatic_couplings_1d(grad_H_list[ii], E_list[ii], evecs_list[ii])[0]
+    
+    E_list += E0_list
 
-    # fig = plt.figure(figsize=(16, 6), dpi=300)
-    # ax = fig.add_subplot(121)
-    # # for ii in range(model.no):
+    fig = plt.figure(figsize=(16, 6), dpi=300)
+    ax = fig.add_subplot(121)
+    for ii in range(model.no):
     # for ii in [2, 3]:
-    #     ax.plot(R, E_list[:, ii], label=f"Orbital {ii}")
-    # ax.set_xlabel("R")
-    # ax.set_ylabel("Energy")
-    # ax.legend()
+        ax.plot(R, E_list[:, ii], label=f"Orbital {ii}")
+    ax.set_xlabel("R")
+    ax.set_ylabel("Energy")
+    ax.legend()
+    ax.set_xlim(-10, 20)
+    ax.set_ylim(-0.02, 0.05)
+    ax = fig.add_subplot(122)
+    for ii in range(model.no):
+        for jj in range(ii+1, model.no):
+            ax.plot(R, nac_list[:, ii, jj], label=f"Orbital {ii} -> {jj}")
     # ax.set_xlim(-10, 20)
-    # ax.set_ylim(-0.02, 0.05)
-    # ax = fig.add_subplot(122)
-    # # for ii in range(model.no):
+    ax.legend() 
+    plt.show()
+
+    H_CI_list = np.zeros((R.size, model.states.shape[0], model.states.shape[0]))
+    E_CI_list = np.zeros((R.size, model.states.shape[0]))
+    E0_list = np.zeros((R.size, model.states.shape[0]))
+    evecs_CI_list = np.zeros((R.size, model.states.shape[0], model.states.shape[0]))
+    grad_H_CI_list = np.zeros((R.size, model.states.shape[0], model.states.shape[0]))
+    nac_CI_list = np.zeros((R.size, model.states.shape[0], model.states.shape[0]))
+    for ii, r in enumerate(R):
+        E0_list[ii] = model.get_U0(r)
+        H_CI_list[ii] = model.get_H_CI(H_list[ii])
+        # E_CI_list[ii], evecs_CI_list[ii] = np.linalg.eigh(H_CI_list[ii])
+        E_CI_list[ii], evecs_CI_list[ii] = LA.eigh(H_CI_list[ii])
+        if ii > 0:
+            evecs_CI_list[ii] = align_phase(evecs_CI_list[ii-1], evecs_CI_list[ii])
+        # grad_H_CI = model.get_grad_H_CI(grad_H_list[ii])
+        # grad_H_CI_list[ii] = grad_H_CI
+        # nac_CI, _, _ = evaluate_nonadiabatic_couplings(grad_H_CI[..., None], E_CI_list[ii], evecs_CI_list[ii])
+        # nac_CI_list[ii] = nac_CI[:, :, 0]
+        grad_H_CI_list[ii] = model.get_grad_H_CI(grad_H_list[ii])
+        nac_CI_list[ii] = evaluate_nonadiabatic_couplings_1d(grad_H_CI_list[ii], E_CI_list[ii], evecs_CI_list[ii])[0]
+    
+    E_CI_list += E0_list
+
+
+    fig = plt.figure(figsize=(16, 6), dpi=300)
+    ax = fig.add_subplot(121)
+    for ii in range(model.states.shape[0]):
+    # for ii in [2, 3]:
+        ax.plot(R, E_CI_list[:, ii], label=f"State {model.states[ii]}")
+    ax.set_xlabel("R")
+    ax.set_ylabel("Energy")
+    ax.set_xlim(-10, 20)
+    ax.set_ylim(-0.02, 0.05)
+    ax.legend()
+    ax = fig.add_subplot(122)
+    for ii in range(model.states.shape[0]):
+        for jj in range(ii+1, model.states.shape[0]):
     # ii = 0
-    # for jj in range(ii+1, model.no):
-    #     ax.plot(R, nac_list[:, ii, jj], label=f"Orbital {ii} -> {jj}")
-    # ax.set_xlim(-10, 20)
-    # plt.show()
+    # for jj in range(ii+1, model.states.shape[0]):
+            ax.plot(R, nac_CI_list[:, ii, jj], label=f"State {model.states[ii]} -> {model.states[jj]}")
+    # ax.set_xlim(-5, 15)
 
-    # H_CI_list = np.zeros((R.size, model.states.shape[0], model.states.shape[0]))
-    # E_CI_list = np.zeros((R.size, model.states.shape[0]))
-    # evecs_CI_list = np.zeros((R.size, model.states.shape[0], model.states.shape[0]))
-    # grad_H_CI_list = np.zeros((R.size, model.states.shape[0], model.states.shape[0]))
-    # nac_CI_list = np.zeros((R.size, model.states.shape[0], model.states.shape[0]))
-    # for ii, r in enumerate(R):
-    #     H_CI_list[ii] = model.get_H_CI(H_list[ii])
-    #     # E_CI_list[ii], evecs_CI_list[ii] = np.linalg.eigh(H_CI_list[ii])
-    #     E_CI_list[ii], evecs_CI_list[ii] = LA.eigh(H_CI_list[ii])
-    #     if ii > 0:
-    #         evecs_CI_list[ii] = align_phase(evecs_CI_list[ii-1], evecs_CI_list[ii])
-    #     # grad_H_CI = model.get_grad_H_CI(grad_H_list[ii])
-    #     # grad_H_CI_list[ii] = grad_H_CI
-    #     # nac_CI, _, _ = evaluate_nonadiabatic_couplings(grad_H_CI[..., None], E_CI_list[ii], evecs_CI_list[ii])
-    #     # nac_CI_list[ii] = nac_CI[:, :, 0]
-    #     grad_H_CI_list[ii] = model.get_grad_H_CI(grad_H_list[ii])
-    #     nac_CI_list[ii] = evaluate_nonadiabatic_couplings_1d(grad_H_CI_list[ii], E_CI_list[ii], evecs_CI_list[ii])[0]
-
-
-    # fig = plt.figure(figsize=(16, 6), dpi=300)
-    # ax = fig.add_subplot(121)
-    # # for ii in range(model.states.shape[0]):
-    # for ii in [2, 3]:
-    #     ax.plot(R, E_CI_list[:, ii], label=f"State {model.states[ii]}")
-    # ax.set_xlabel("R")
-    # ax.set_ylabel("Energy")
-    # ax.set_xlim(-10, 20)
-    # ax.set_ylim(-0.02, 0.05)
-    # ax.legend()
-    # ax = fig.add_subplot(122)
-    # for ii in range(model.states.shape[0]):
-    #     for jj in range(ii+1, model.states.shape[0]):
-    # # ii = 0
-    # # for jj in range(ii+1, model.states.shape[0]):
-    #         ax.plot(R, nac_CI_list[:, ii, jj], label=f"State {model.states[ii]} -> {model.states[jj]}")
-    # # ax.set_xlim(-5, 15)
-
-    # plt.show()
+    plt.show()
 
 
 # %%

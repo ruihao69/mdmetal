@@ -15,7 +15,10 @@ def evaluate_hamiltonian_diabatic(
     P: float,
     h_obj: NewnsAndersonHarmonic,
 ) -> NDArray[np.float64]:
-    return h_obj.evaluate(R, is_CI=True)
+    # return h_obj.evaluate(R, is_CI=True)
+    H_CI, grad_H_CI = h_obj.evaluate(R, is_CI=True)
+    F0 = - h_obj.get_grad_U0(R)
+    return H_CI, grad_H_CI, F0
     
 
 def P_dot(
@@ -48,6 +51,7 @@ def verlet_diabatic(
     h_obj: NewnsAndersonHarmonic,
     last_H_CI: NDArray[np.float64],
     last_grad_H_CI: NDArray[np.float64],
+    last_F0: NDArray[np.float64],
 ) -> Tuple[float, float, float, NDArray[np.complex128], NDArray[np.float64], NDArray[np.float64]]:
     # unpack some parameters 
     mass = h_obj.mass
@@ -60,23 +64,23 @@ def verlet_diabatic(
     # dP_langevin = 0
     
     # first half step for P
-    P += 0.5 * dt * P_dot(last_grad_H_CI, c) + 0.5 * dP_langevin
+    P += 0.5 * dt * P_dot(last_grad_H_CI, c) + 0.5 * dP_langevin + 0.5 * dt * last_F0
     c = quantum_rk4(c, last_H_CI, dt * 0.5)
     
     # update R
     R += dt * P / mass
     
     # re-evaluate the hamiltonian 
-    H_CI, grad_H_CI = evaluate_hamiltonian_diabatic(R, P, h_obj)
+    H_CI, grad_H_CI, F0 = evaluate_hamiltonian_diabatic(R, P, h_obj)
     
     # update c
     c = quantum_rk4(c, H_CI, dt * 0.5)
     
     # second half step for P 
-    P += 0.5 * dt * P_dot(grad_H_CI, c) + 0.5 * dP_langevin
+    P += 0.5 * dt * P_dot(grad_H_CI, c) + 0.5 * dP_langevin + 0.5 * dt * F0
     
     t += dt
-    return t, R, P, c, H_CI, grad_H_CI
+    return t, R, P, c, H_CI, grad_H_CI, F0
 
 
 def dynamics_one(
@@ -109,7 +113,7 @@ def dynamics_one(
     P = P0
     c = psi0
     
-    H, gradH = evaluate_hamiltonian_diabatic(R, P, hami)
+    H, gradH, F0 = evaluate_hamiltonian_diabatic(R, P, hami)
     
     # print(f"{P_dot(gradH, psi0)=}")
     
@@ -122,9 +126,9 @@ def dynamics_one(
             P_out[iout] = P
             pop_out[iout, :] = reduce_state_populations(c, hami.no, hami.states)
             KE_out[iout] = compute_KE(P, hami.mass)
-            PE_out[iout] = np.dot(c.conj(), np.dot(H, c)).real  
+            PE_out[iout] = np.dot(c.conj(), np.dot(H, c)).real  + hami.get_U0(R)
             
-        t, R, P, c, H, gradH = verlet_diabatic(t, R, P, c, dt, hami, H, gradH)
+        t, R, P, c, H, gradH, F0 = verlet_diabatic(t, R, P, c, dt, hami, H, gradH, F0)
         
     return t_out, R_out, P_out, pop_out, KE_out, PE_out
    

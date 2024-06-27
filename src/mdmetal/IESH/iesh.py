@@ -33,7 +33,7 @@ def evaluate_hamiltonian_adiabatic(
     last_phase_corr: NDArray[np.float64],
 ) -> NDArray[np.float64]:
     H, grad_H = h_obj.evaluate(R, is_CI=False)
-    E0 = h_obj.get_U0(R)
+    # E0 = h_obj.get_U0(R)
     F0 = -h_obj.get_grad_U0(R)
     # E0 = F0 = 0.0
     
@@ -52,14 +52,14 @@ def evaluate_hamiltonian_adiabatic(
     
     v_dot_d = P * d / h_obj.mass
     
-    return c, evals, evecs, d, F, v_dot_d, phase_corr, E0, F0
+    return c, evals, evecs, d, F, v_dot_d, phase_corr, F0
 
 def P_dot(
     F: NDArray[np.float64],
     F0: NDArray[np.float64],
     active_state: NDArray[np.int64],
 ) -> NDArray[np.float64]:
-    return sum(F[i] - F0 for i in active_state) + F0
+    return sum(F[i] for i in active_state) + F0
 
 def IESH_hop(
     c: NDArray[np.complex128],
@@ -163,7 +163,6 @@ def verlet_iesh(
     last_v_dot_d: NDArray[np.float64],
     last_F: NDArray[np.float64],
     last_phase_corr: NDArray[np.float64],
-    last_E0: float,
     last_F0: float,
 ):
     # unpack some parameters 
@@ -198,7 +197,7 @@ def verlet_iesh(
     R += dt * P / mass
     
     # re-evaluate the hamiltonian
-    c, evals, evecs, d, F, v_dot_d, phase_corr, E0, F0 = evaluate_hamiltonian_adiabatic(R, P, c, h_obj, last_evecs, last_phase_corr)
+    c, evals, evecs, d, F, v_dot_d, phase_corr, F0 = evaluate_hamiltonian_adiabatic(R, P, c, h_obj, last_evecs, last_phase_corr)
     
     
     # second half step for c and P
@@ -226,7 +225,7 @@ def verlet_iesh(
     
     # raise ValueError("Stop here")
     
-    return t, R, P, c, active_state, evals, evecs, d, F, v_dot_d, phase_corr, E0, F0
+    return t, R, P, c, active_state, evals, evecs, d, F, v_dot_d, phase_corr, F0
 
 def dynamics_one(
     R0: float,
@@ -277,7 +276,7 @@ def dynamics_one(
     #     c[active_state[ie], ie] = 1.0
         
     
-    c, evals, evecs, d, F, v_dot_d, phase_corr, E0, F0 = evaluate_hamiltonian_adiabatic(R, P, c, hami, None, None)
+    c, evals, evecs, d, F, v_dot_d, phase_corr, F0 = evaluate_hamiltonian_adiabatic(R, P, c, hami, None, None)
     
     for istep in range(nsteps):
         if istep % out_freq == 0:
@@ -286,10 +285,10 @@ def dynamics_one(
             R_out[iout] = R
             P_out[iout] = P
             KE_out[iout] = 0.5 * P**2 / mass 
-            PE_out[iout] = np.sum(evals[active_state] - E0) + E0
+            PE_out[iout] = np.sum(evals[active_state]) + h_obj.get_U0(R)
             pop_out[iout] = populations_iesh_landry(c, evecs, active_state)
             
-        t, R, P, c, active_state, evals, evecs, d, F, v_dot_d, phase_corr, E0, F0 = verlet_iesh(t, R, P, c, active_state, dt, hami, evals, evecs, d, v_dot_d, F, phase_corr, E0, F0)
+        t, R, P, c, active_state, evals, evecs, d, F, v_dot_d, phase_corr, F0 = verlet_iesh(t, R, P, c, active_state, dt, hami, evals, evecs, d, v_dot_d, F, phase_corr, F0)
         # print(f"{np.sum(np.abs(c)**2, axis=0)=}")
         # print(f"{R=}, {P=}, {np.sum(np.abs(c)**2, axis=0)=}")
         

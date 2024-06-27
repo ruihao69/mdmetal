@@ -42,6 +42,7 @@ def evalute_hamiltonian_adiabatic(
 ) -> NDArray[np.float64]:
     # print(f"{R=}, {P=}") 
     H, grad_H = h_obj.evaluate(R, is_CI=True)
+    F0 = - h_obj.get_grad_U0(R)
     
     evals, evecs = LA.eigh(H)
     
@@ -68,11 +69,12 @@ def evalute_hamiltonian_adiabatic(
     F_hellmann_feynman = phase_correct_fhf(F_hellmann_feynman, phase_corr)
     c = c * phase_corr / last_phase_corr if last_phase_corr is not None else c * phase_corr
     
-    # phase_corr = np.arange(len(evals))
+    # phase_corr = np.ones(len(evals))
+    # order = np.arange(len(evals))
     
     v_dot_d = P * d / h_obj.mass 
     
-    return c, evals, evecs, d, F_hellmann_feynman, v_dot_d, phase_corr, order
+    return c, evals, evecs, d, F_hellmann_feynman, F0, v_dot_d, phase_corr, order
 
 def P_dot(
     F_hellmann_feynman: NDArray[np.float64],
@@ -107,6 +109,7 @@ def verlet_adiabatic(
     last_evals: NDArray[np.float64],
     last_v_dot_d: NDArray[np.float64],
     last_F_hellmann_feynman: NDArray[np.float64],
+    last_F0: NDArray[np.float64], # state-independent force
     last_evecs: NDArray[np.float64],
     last_phase_corr: NDArray[np.float64],
 ) -> Tuple[float, float, float, NDArray[np.complex128], NDArray[np.float64], NDArray[np.float64]]:
@@ -121,26 +124,26 @@ def verlet_adiabatic(
     # dP_langevin = 0
     
     # first half step for P
-    P += 0.5 * dt * P_dot(last_F_hellmann_feynman, c) + 0.5 * dP_langevin
+    P += 0.5 * dt * P_dot(last_F_hellmann_feynman, c) + 0.5 * dP_langevin + 0.5 * dt * last_F0 
     c = quantum_rk4(c, last_evals, last_v_dot_d, 0.5 * dt)
     
     # update R 
     R += dt * P / mass
     
     # re-evaluate the hamiltonian
-    c, evals, evecs, d, F_hellmann_feynman, v_dot_d, phase_corr, order = evalute_hamiltonian_adiabatic(R, P, c, h_obj, last_evecs, last_phase_corr)
+    c, evals, evecs, d, F_hellmann_feynman, F0, v_dot_d, phase_corr, order = evalute_hamiltonian_adiabatic(R, P, c, h_obj, last_evecs, last_phase_corr)
     
     # update c
     c = quantum_rk4(c, evals, v_dot_d, 0.5 * dt)
     
     # second half step for P
-    P += 0.5 * dt * P_dot(F_hellmann_feynman, c) + 0.5 * dP_langevin    
+    P += 0.5 * dt * P_dot(F_hellmann_feynman, c) + 0.5 * dP_langevin  + 0.5 * dt * F0
     
     # re-evaluate the v_dot_d
     v_dot_d = P * d / mass
     
     t += dt
-    return t, R, P, c, evals, evecs, v_dot_d, F_hellmann_feynman, phase_corr, order
+    return t, R, P, c, evals, evecs, v_dot_d, F_hellmann_feynman, F0, phase_corr, order
 
 def dynamics_one(
     R0: float,
@@ -172,7 +175,7 @@ def dynamics_one(
     P = P0
     c = c0
     
-    c, evals, evecs, d, F_hellmann_feynman, v_dot_d, phase_corr, order = evalute_hamiltonian_adiabatic(R, P, c, hami, None, None)
+    c, evals, evecs, d, F_hellmann_feynman, F0, v_dot_d, phase_corr, order = evalute_hamiltonian_adiabatic(R, P, c, hami, None, None)
     # print(f"{P_dot(F_hellmann_feynman, c)=}")
     
     for istep in range(nsteps):
@@ -181,11 +184,11 @@ def dynamics_one(
             t_out[iout] = t
             R_out[iout] = R
             P_out[iout] = P
-            KE_out[iout] = compute_KE(P, hami.mass)
-            PE_out[iout] = np.sum(evals * np.abs(c)**2) 
+            KE_out[iout] = compute_KE(P, hami.mass) 
+            PE_out[iout] = np.sum(evals * np.abs(c)**2) + hami.get_U0(R)
             pop_out[iout, :] = compute_orbital_populations(c, evecs, hami.no, hami.states)
             
-        t, R, P, c, evals, evecs, v_dot_d, F_hellmann_feynman, phase_corr, order = verlet_adiabatic(t, R, P, c, dt, hami, order, evals, v_dot_d, F_hellmann_feynman, evecs, phase_corr) 
+        t, R, P, c, evals, evecs, v_dot_d, F_hellmann_feynman, F0, phase_corr, order = verlet_adiabatic(t, R, P, c, dt, hami, order, evals, v_dot_d, F_hellmann_feynman, F0, evecs, phase_corr) 
         
     return t_out, R_out, P_out, KE_out, PE_out, pop_out
 
