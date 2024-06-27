@@ -287,6 +287,11 @@ def _test_main():
     ax.legend()
     plt.show()
     
+    fig = plt.figure(figsize=(6, 5), dpi=300)
+    ax = fig.add_subplot(111)
+    ax.plot(t*hamiltonian.omega_B, np.sum(pop, axis=1), label="state 0")
+    ax.set_ylim([1.9, 2.1])
+    
     fig = plt.figure(figsize=(15, 5), dpi=300)
     ax = fig.add_subplot(131)
     ax.plot(t*hamiltonian.omega_B, KE)

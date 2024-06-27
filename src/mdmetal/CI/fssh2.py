@@ -7,12 +7,13 @@ import scipy.linalg as LA
 from mdmetal.hamiltonian import NewnsAndersonHarmonic
 from mdmetal.hamiltonian.hamiltonian_adiab_orb import NewnsAndersonHarmonic2
 from mdmetal.utils import schrodinger_adiabatic
-from mdmetal.CI.properties import compute_KE,  reduce_state_populations, compute_surface_hopping_pop2
+from mdmetal.CI.properties import compute_KE,  reduce_state_populations, compute_surface_hopping_pop
 from mdmetal.CI.ehrenfest_adiabatic import get_phase_correction
 from mdmetal.CI.fssh import P_dot, hopping_check, quantum_rk4, momentum_rescale 
 
 from typing import Tuple 
 from copy import deepcopy
+from itertools import permutations
 
 def P_dot(
     F: NDArray[np.float64],
@@ -68,7 +69,7 @@ def verlet_adiabatic(
     D = h_obj.kT * gamma * mass
     sigma = np.sqrt(2 * D / dt)
     dP_langevin = dt * (-gamma * P + sigma * np.random.normal(0, 1))
-    dP_langevin = 0
+    # dP_langevin = 0
     
     # first half step for c and P
     P += 0.5 * dt * P_dot(last_F, active_state) + 0.5 * dP_langevin + 0.5 * dt * last_F0
@@ -114,7 +115,109 @@ def verlet_adiabatic(
     t += dt
     
     return t, R, P, c, active_state, evals, evecs, d, F, F0, v_dot_d, phase_corr 
+
+# def get_U_state(
+#     states: NDArray[np.int64],
+#     U_orb: NDArray[np.float64],
+# ) -> NDArray[np.float64]:
+#     pass
+
+# @njit
+# def compute_perm_order(
+#     state_k: NDArray[np.int64],
+#     perm_list: NDArray[np.int64],
+# ) -> int:
+#     order_list = np.zeros(perm_list.shape[0], dtype=np.int64)
+#     for ii, state_k_perm in enumerate(perm_list):
+#         order = 0
+#         for i in range(state_k.shape[0]):
+#             if state_k[i] != state_k_perm[i]:
+#                 order += 1
+#         order_list[ii] = order
+#     return order_list
+
+# @njit
+# def get_all_perm(
+#     state_k: NDArray[np.int64],
+# ) -> Tuple[NDArray[np.int64], int]:
+#     # return all possible permutations of the state
+#     # as well as the number of permutations
+#     perm_list = np.array([state_k_perm for state_k_perm in permutations(state_k)])
+#     order_list = compute_perm_order(state_k, perm_list)
+#     return perm_list, order_list 
     
+@njit
+def U_state_elem(
+    k: int,
+    i: int,
+    U_orb: NDArray[np.float64],
+    states: NDArray[np.int64],
+    perm_list: NDArray[np.int64],   
+    order_list: NDArray[np.int64],
+) -> NDArray[np.float64]:
+    ns, ne = states.shape
+    state_k = states[k]
+    state_i = states[i]
+    out = 0.0
+    for perm, order in zip(perm_list, order_list):
+        val = 1.0
+        perm_k = state_k[perm]
+        order_k = order
+        for ie in range(ne):
+            val *= U_orb[state_i[ie], perm_k[ie]]
+        out += val * (-1)**order_k
+    return out
+
+@njit
+def get_U_state(   
+    U_orb: NDArray[np.float64],
+    states: NDArray[np.int64],
+    perm_list: NDArray[np.int64],
+    order_list: NDArray[np.int64],
+) -> NDArray[np.float64]:
+    ns, _ = states.shape
+    U_state = np.zeros((ns, ns), dtype=np.float64)
+    for k in range(ns):
+        for i in range(ns):
+            U_state[k, i] = U_state_elem(k, i, U_orb, states, perm_list, order_list)
+    return U_state
+
+
+@njit
+def get_U_state_dagger(
+    U_orb: NDArray[np.float64],
+    states: NDArray[np.int64],
+    perm_list: NDArray[np.int64],
+    order_list: NDArray[np.int64],
+) -> NDArray[np.float64]:
+    ns, _ = states.shape
+    U_state_dagger = np.zeros((ns, ns), dtype=np.float64)
+    for i in range(ns):
+        for j in range(ns):
+            pass
+    
+
+def count_inversions(seq):
+    """Helper function to count the number of inversions in a sequence."""
+    count = 0
+    for i in range(len(seq)):
+        for j in range(i + 1, len(seq)):
+            if seq[i] > seq[j]:
+                count += 1
+    return count
+
+def permutation_order_and_list(n):
+    """Return all permutations of np.arange(n) and their permutation orders."""
+    original_seq = np.arange(n)
+    all_perms = list(permutations(original_seq))
+    
+    all_orders = [] 
+    for perm in all_perms:
+        order = count_inversions(perm)
+        all_orders.append(order)
+    
+    return np.array(all_perms), np.array(all_orders)
+
 
 def dynamics_one(
     R0: float,
@@ -156,6 +259,9 @@ def dynamics_one(
     # evaluate the hamiltonian once to start the dynamics
     evals, evecs, d, F, F0, v_dot_d, phase_corr = evalute_hamiltonian_adiabatic(R, P, h_obj, None, None)
     
+    # pre-compute the permutation list and order list
+    perm_list, order_list = permutation_order_and_list(hami.ne)
+    
     # main loop
     for istep in range(nsteps):
         if istep % out_freq == 0:
@@ -163,7 +269,9 @@ def dynamics_one(
             t_out[iout] = t
             R_out[iout] = R
             P_out[iout] = P
-            pop_out[iout, :] = compute_surface_hopping_pop2(active_state, evecs, hami.states)
+            U_state = get_U_state(evecs, hami.states, perm_list, order_list)
+            tmp_diab_pop = compute_surface_hopping_pop(active_state, c, U_state)
+            pop_out[iout, :] = reduce_state_populations(tmp_diab_pop, hami.no, hami.states)
             KE_out[iout] = compute_KE(P, mass)
             PE_out[iout] = h_obj.get_U0(R) + evals[active_state]
         
@@ -197,22 +305,39 @@ def _test_main():
     H, gradH = hamiltonian.evaluate_one_electron(R0)
     evals, evecs = LA.eigh(H)
     
+    # perm_list, order_list = get_permutation_order(hamiltonian.ne) 
+    perm_list, order_list  = permutation_order_and_list(hamiltonian.ne)
+    U_state = get_U_state(evecs, hamiltonian.states, perm_list, order_list ) 
+    # U_state_dagger = get_U_state(evecs.T.conj(), hamiltonian.states, perm_list, order_list)
+    psi0 = np.dot(U_state.T, psi0)
+    # psi0 = np.dot(U_state_dagger.T, psi0)
+    
+    # print(U_state.shape)
+    # print(f"{np.sum(np.abs(psi0)**2)=}")
+    # print(f"{psi0=}")
+    
+    
     # use independent particle approximation for the initial amplitude
     # overlap matrix
-    psi_dummy_list = []
-    for ie in range(hamiltonian.ne):
-        psi_dummy = np.zeros(hamiltonian.no, dtype=np.complex128)
-        psi_dummy[state[ie]] = 1.0
-        psi_dummy = np.dot(evecs, psi_dummy)
-        psi_dummy_list.append(psi_dummy)
-    psi_dummy_list = np.array(psi_dummy_list).T
+    # psi_dummy_list = []
+    # for ie in range(hamiltonian.ne):
+    #     psi_dummy = np.zeros(hamiltonian.no, dtype=np.complex128)
+    #     psi_dummy[state[ie]] = 1.0
+    #     psi_dummy = np.dot(evecs, psi_dummy)
+    #     psi_dummy_list.append(psi_dummy)
+    # psi_dummy_list = np.array(psi_dummy_list).T
         
-    for istate, state in enumerate(hamiltonian.states):
-        S = np.zeros((hamiltonian.ne, hamiltonian.ne), dtype=np.complex128)
-        for ie in range(hamiltonian.ne):
-            for je in range(hamiltonian.ne):
-                S[ie, je] += psi_dummy_list[state[ie], je]
-        psi0[istate] = np.linalg.det(S)
+    # for istate, state in enumerate(hamiltonian.states):
+    #     S = np.zeros((hamiltonian.ne, hamiltonian.ne), dtype=np.complex128)
+    #     for ie in range(hamiltonian.ne):
+    #         for je in range(hamiltonian.ne):
+    #             S[ie, je] += psi_dummy_list[state[ie], je]
+    #     psi0[istate] = np.linalg.det(S)
+    
+    # print(f"{np.sum(np.abs(psi0)**2)=}")
+    # print(f"{psi0=}")
+      
+    # raise ValueError("Check the U_state")
 
     # psi0 = np.dot(evecs.T.conj(), psi0)
     
