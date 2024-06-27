@@ -91,19 +91,18 @@ def main():
         from mdmetal.CI.ehrenfest_diabatic import dynamics_one as runner
     elif inp.method == Method.CI_EH_A:
         from mdmetal.CI.ehrenfest_adiabatic import dynamics_one as runner
-    elif inp.method == Method.CI_FSSH:
+    elif inp.method == Method.CI_FSSH_D:
         # from mdmetal.CI.surface_hopping_adiabatic import dynamics_one as runner
         # raise NotImplementedError("Surface hopping is not implemented yet")
         from mdmetal.CI.fssh import dynamics_one as runner
+    elif inp.method == Method.CI_FSSH_A:
+        from mdmetal.CI.fssh2 import dynamics_one as runner
     elif inp.method == Method.IESH:
         from mdmetal.IESH.iesh import dynamics_one as runner
     else:
         raise ValueError(f"method {inp.method} not implemented")
     
     assert runner is not None, f"runner is not defined for method {inp.method}"
-        
-    
-        
         
 
     # for each initial condition (R0, P0, psi0), run the dynamics

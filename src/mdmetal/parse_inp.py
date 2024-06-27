@@ -7,14 +7,22 @@ from dataclasses import dataclass, field
 import warnings
 
 class Method(Enum):
-    CI_EH_D = "CI-Eh-D"
-    CI_EH_A = "CI-Eh-A"
-    CI_FSSH = "CI-FSSH"
+    # CI hamiltonian (from diabatic orbitals), Ehrenfest dynamics in Diabatic CI basis
+    CI_EH_D = "CI-Eh-D" 
+    # CI hamiltonian (from diabatic orbitals), Ehrenfest dynamics in Adiabatic CI basis
+    CI_EH_A = "CI-Eh-A" 
+    # CI hamiltonian (from diabatic orbitals), Tully's surface hopping in Adiabatic CI basis
+    CI_FSSH_D = "CI-FSSH-D"
+    # CI hamiltonian (from ADIABATIC orbitals), Tully's surface hopping in Adiabatic CI basis
+    # particularly, since the CI hamiltonian is from adiabatic orbitals, this mehtod doesn't
+    # require diagonalization of the CI hamiltonian
+    CI_FSSH_A = "CI-FSSH-A"
+    # The good old Independent Electron Surface Hopping (IESH)
     IESH = "IESH"
     
     @property
     def is_CI(self):
-        return self in [Method.CI_EH_D, Method.CI_EH_A, Method.CI_FSSH]
+        return self in [Method.CI_EH_D, Method.CI_EH_A, Method.CI_FSSH_D, Method.CI_FSSH_A]
     
     @property
     def is_IESH(self):
