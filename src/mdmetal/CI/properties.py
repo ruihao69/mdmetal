@@ -1,5 +1,6 @@
 # %%
 import numpy as np
+from numpy.typing import NDArray
 from numba import njit
 
 def compute_diabatic_populations_from_adiabatic_psi(psi_adiabatic, evecs):
@@ -41,3 +42,42 @@ def compute_surface_hopping_pop(
             for kk in range(jj+1, ns):
                 populations[istate] += 2.0 * np.real(U[istate, jj] * np.conj(U[istate, kk]) * rho[jj, kk])
     return populations  
+
+# @njit
+# def compute_surface_hopping_pop2(
+#     active_state: int,
+#     evecs: NDArray[np.float64], 
+#     states: NDArray[np.int64]
+# ):
+#     ns, ne = states.shape
+#     istate = states[active_state]
+#     c_diab = np.zeros(ns, dtype=np.complex128)
+#     for jj, jstate in enumerate(states):
+#         tmp_val: complex = 1.0
+#         for kk in range(ne):
+#             i, j = istate[kk], jstate[kk]
+#             tmp_val *= evecs[i, j]
+#         c_diab[jj] += tmp_val
+#     return reduce_state_populations(c_diab, evecs.shape[0], states)
+               
+
+def compute_surface_hopping_pop2(
+    active_state: int,
+    U_orb: np.ndarray,
+    states: NDArray[np.int64]
+) -> np.ndarray:
+    # the active state is:  
+    # a_1^{\dagger} ... a_n^{\dagger} | >, where n is the number of electrons
+    # thus, the simplist equation for the corresponding diabatic orbitals is:
+    # pop(iorbital) = \sum_{ielec} \sum_j^{norbs} |U[j, state[ielec]]|^2
+    # However, the off diagonal contributions from the coherence terms 
+    # will be ignored for now.
+    ns, ne = states.shape
+    no = U_orb.shape[1]
+    state = states[active_state]
+    populations = np.zeros(no, dtype=np.float64)
+    for io in range(no):
+        for ie in range(ne):
+            active_orb = state[ie]
+            populations[io] += np.abs(U_orb[active_orb, io])**2
+    return populations
