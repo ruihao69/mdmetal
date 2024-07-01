@@ -40,7 +40,7 @@ def preprocess() -> InputParameters:
     inp.output_dir = args.output
     
     try: 
-        method = Method(inp.method)
+        method = Method(args.method)
     except ValueError:
         raise ValueError(f"Invalid method: {inp.method}. Available methods are: {', '.join([m.value for m in Method])}")
     
@@ -53,16 +53,13 @@ def initial_conditions(inp: InputParameters) -> Tuple[NewnsAndersonHarmonic, np.
 
     # classical initial conditions
     if inp.flag_boltzmann:
-        R0, P0 = boltzmann_sampling(inp.ntrajs, inp.kT, inp.mass, inp.W)
+        R0, P0 = boltzmann_sampling(inp.ntrajs, inp.kT, inp.mass, hami.omega_B)
     else:
-        R0, P0 = wigner_sampling(inp.ntrajs, inp.kT, inp.mass, inp.W)
+        R0, P0 = wigner_sampling(inp.ntrajs, inp.kT, inp.mass, hami.omega_B) 
 
     # quantum initial conditions
     initial_diabatic_states = inp.init_state
-    states = hami.states
-    nstates = states.shape[0]
-
-    psi0 = np.zeros(nstates, dtype=np.complex128)
+    
     psi0 = init_amplitudes(
         no=inp.no,
         ne=inp.ne,
@@ -108,7 +105,6 @@ def main():
     # for each initial condition (R0, P0, psi0), run the dynamics
     # parallelize the dynamics for each initial condition
     result = Parallel(n_jobs=-1, verbose=10, return_as='generator')(
-        # delayed(dynamics_one_traj_adiab)(R0[itraj], P0[itraj], psi0[itraj], **kwargs) for itraj in range(inp.ntrajs)
         delayed(runner)(R0[itraj], P0[itraj], psi0[itraj], **kwargs) for itraj in range(inp.ntrajs)
     )
 

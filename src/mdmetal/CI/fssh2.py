@@ -11,7 +11,7 @@ from mdmetal.CI.properties import compute_KE,  reduce_state_populations, compute
 from mdmetal.CI.ehrenfest_adiabatic import get_phase_correction
 from mdmetal.CI.fssh import P_dot, hopping_check, quantum_rk4, momentum_rescale 
 
-from typing import Tuple 
+from typing import Tuple, Union
 from copy import deepcopy
 from itertools import permutations
 
@@ -223,20 +223,25 @@ def dynamics_one(
     R0: float,
     P0: float,
     c0: NDArray[np.complex128],
-    h_obj: NewnsAndersonHarmonic,
+    hamiltonian: Union[NewnsAndersonHarmonic, NewnsAndersonHarmonic2],
     tf: float,
     dt: float,
     n_quantum_steps: int = 1,
     out_freq: int = 100,  
 ):
     # unpack some parameters
-    mass = h_obj.mass
-    nstates = h_obj.states.shape[0]
+    mass = hamiltonian.mass
+    nstates = hamiltonian.states.shape[0]
     
     nsteps = int(tf / dt)
     n_out = int(nsteps / out_freq)
     
-    hami = deepcopy(h_obj)
+    if isinstance(hamiltonian, NewnsAndersonHarmonic2):
+        hami = deepcopy(hamiltonian)
+    elif isinstance(hamiltonian, NewnsAndersonHarmonic):
+        hami = NewnsAndersonHarmonic2.from_NewnsAndersonHarmonic(hamiltonian)
+    else:
+        raise ValueError("Hamiltonian should be either NewnsAndersonHarmonic or NewnsAndersonHarmonic2")
     
     # pre-allocate the output arrays
     t_out = np.zeros(n_out)
@@ -257,7 +262,7 @@ def dynamics_one(
     active_state = np.random.choice(nstates, p=prob)
     
     # evaluate the hamiltonian once to start the dynamics
-    evals, evecs, d, F, F0, v_dot_d, phase_corr = evalute_hamiltonian_adiabatic(R, P, h_obj, None, None)
+    evals, evecs, d, F, F0, v_dot_d, phase_corr = evalute_hamiltonian_adiabatic(R, P, hami, None, None)
     
     # pre-compute the permutation list and order list
     perm_list, order_list = permutation_order_and_list(hami.ne)
@@ -273,17 +278,17 @@ def dynamics_one(
             tmp_diab_pop = compute_surface_hopping_pop(active_state, c, U_state)
             pop_out[iout, :] = reduce_state_populations(tmp_diab_pop, hami.no, hami.states)
             KE_out[iout] = compute_KE(P, mass)
-            PE_out[iout] = h_obj.get_U0(R) + evals[active_state]
+            PE_out[iout] = hami.get_U0(R) + evals[active_state]
         
         # update the dynamics
         t, R, P, c, active_state, evals, evecs, d, F, F0, v_dot_d, phase_corr = verlet_adiabatic(
-            t, R, P, c, active_state, dt, h_obj, evals, v_dot_d, F, F0, evecs, phase_corr, d
+            t, R, P, c, active_state, dt, hami, evals, v_dot_d, F, F0, evecs, phase_corr, d
         )
         # print(f"{t=}, {R=}, {P=}, {active_state=}")
         # print(f"{t=}, {np.sum(np.abs(c)**2)=}, {active_state=}")
         
-    return t_out, R_out, P_out, KE_out, PE_out, pop_out
-    
+    return t_out, R_out, P_out, pop_out, KE_out, PE_out 
+
 def _test_main():
     hamiltonian =  NewnsAndersonHarmonic.initialize(2, 2, 0.00095, 16e-3, 1e-5, 2000.0)
     hamiltonian = NewnsAndersonHarmonic2.from_NewnsAndersonHarmonic(hamiltonian)    
@@ -341,7 +346,7 @@ def _test_main():
 
     # psi0 = np.dot(evecs.T.conj(), psi0)
     
-    t, R, P, KE, PE, pop = dynamics_one(R0, P0, psi0, hamiltonian, tf=100000, dt=1, out_freq=100)
+    t, R, P, pop, KE, PE = dynamics_one(R0, P0, psi0, hamiltonian, tf=100000, dt=1, out_freq=100)
     
     import matplotlib.pyplot as plt 
     fig = plt.figure(figsize=(10, 5), dpi=300)

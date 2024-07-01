@@ -149,14 +149,16 @@ def dynamics_one(
     R0: float,
     P0: float,
     c0: NDArray[np.complex128],
-    h_obj: NewnsAndersonHarmonic,
+    hamiltonian: NewnsAndersonHarmonic,
     tf: float,  
     dt: float,
     n_quantum_steps: int = 1,
     out_freq: int = 100,
 ) -> Tuple[NDArray[np.float64]]:
+    print("dynamics_one is called from ehrenfest_adiabatic.py")
+    print(f"{c0=}")
     # copy the initial conditions
-    hami = deepcopy(h_obj)
+    hami = deepcopy(hamiltonian)
     
     nsteps = int(tf / dt)
     n_out = int(nsteps / out_freq)
@@ -190,17 +192,18 @@ def dynamics_one(
             
         t, R, P, c, evals, evecs, v_dot_d, F_hellmann_feynman, F0, phase_corr, order = verlet_adiabatic(t, R, P, c, dt, hami, order, evals, v_dot_d, F_hellmann_feynman, F0, evecs, phase_corr) 
         
-    return t_out, R_out, P_out, KE_out, PE_out, pop_out
+    return t_out, R_out, P_out, pop_out, KE_out, PE_out
 
 def _test_main():
-    hamiltonian =  NewnsAndersonHarmonic.initialize(2, 2, 0.00095, 16e-3, 1e-5, 2000.0)
+    hamiltonian =  NewnsAndersonHarmonic.initialize(2, 2, 0.00095, 20e-3, 1e-4, 2000.0)
     
-    np.random.seed(0)
+    np.random.seed(10086)
     
     sigma_R = np.sqrt(hamiltonian.kT / hamiltonian.mass) / hamiltonian.omega_B
     sigma_P = np.sqrt(hamiltonian.kT * hamiltonian.mass)
     
     R0, P0 = np.random.normal(0, sigma_R), np.random.normal(0, sigma_P)
+    print(f"{R0=}, {P0=}")
     
     nstates = hamiltonian.states.shape[0]
     psi0 = np.zeros(nstates, dtype=np.complex128)
@@ -208,12 +211,15 @@ def _test_main():
     istate = np.where(np.all(hamiltonian.states == state, axis=1))[0][0]
     psi0[istate] = 1.0
     
+    print(f"diabatic: {psi0}")
     H, gradH = hamiltonian.evaluate(R0, is_CI=True)
     evals, evecs = LA.eigh(H)
     
-    psi0 = np.dot(evecs.T.conj(), psi0)
+    psi0 = np.dot(evecs.T, psi0)
+    print(f"adiabatic: {psi0}")
     
-    t, R, P, KE, PE, pop = dynamics_one(R0, P0, psi0, hamiltonian, tf=100000, dt=1, out_freq=100)
+    t, R, P, pop, KE, PE = dynamics_one(R0, P0, psi0, hamiltonian, tf=100000, dt=1, out_freq=100)
+    print(pop[0]) 
     
     import matplotlib.pyplot as plt 
     fig = plt.figure(figsize=(10, 5), dpi=300)
@@ -225,6 +231,7 @@ def _test_main():
     ax.plot(t*hamiltonian.omega_B, P)
     ax.set_xlabel('Time (1/w)')
     ax.set_ylabel('P (a.u.)')
+    ax.set_xlim(0, 2)
     plt.show()
     
     fig = plt.figure(figsize=(6, 5), dpi=300)
@@ -234,6 +241,7 @@ def _test_main():
     ax.set_xlabel('Time (1/w)')
     ax.set_ylabel('Population')
     ax.legend()
+    ax.set_xlim(0, 2)
     plt.show()
     
     fig = plt.figure(figsize=(15, 5), dpi=300)
@@ -241,15 +249,18 @@ def _test_main():
     ax.plot(t*hamiltonian.omega_B, KE)
     ax.set_xlabel('Time (1/w)')
     ax.set_ylabel('KE (a.u.)')
+    ax.set_xlim(0, 2)
     
     ax = fig.add_subplot(132)
     ax.plot(t*hamiltonian.omega_B, PE)
     ax.set_xlabel('Time (1/w)')
+    ax.set_xlim(0, 2)
     
     ax = fig.add_subplot(133)
     ax.plot(t*hamiltonian.omega_B, KE + PE)
     ax.set_xlabel('Time (1/w)')
     ax.set_ylabel('TE (a.u.)')
+    ax.set_xlim(0, 2)
     plt.show()
     
 # %%

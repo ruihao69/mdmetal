@@ -1,5 +1,6 @@
 # %%
 import numpy as np
+import scipy.linalg as LA
 
 from mdmetal.parse_inp import Method
 from mdmetal.hamiltonian import NewnsAndersonHarmonic
@@ -11,7 +12,7 @@ from itertools import combinations
 
 def boltzmann_sampling(n_samples: int, kT: float, mass: float, Omega_B: float) -> np.ndarray:
     sigma_R = np.sqrt(kT / (mass * Omega_B**2))
-    sigma_P = np.sqrt(kT * mass * Omega_B**2)
+    sigma_P = np.sqrt(kT * mass)
     R_list = np.random.normal(0, sigma_R, n_samples)
     P_list = np.random.normal(0, sigma_P, n_samples)
     return R_list, P_list
@@ -69,17 +70,17 @@ def init_amplitudes(
             psi0_adiab = []
             for r0 in R0:
                 H, _ = hami.evaluate(r0, is_CI=method.is_CI)
-                _, evecs = np.linalg.eigh(H)
+                _, evecs = LA.eigh(H)
                 # transform the diabatic state to adiabatic state
                 psi0_adiab.append(np.dot(evecs.T.conj(), psi0_diab))
             return np.array(psi0_adiab)
         else:
             from mdmetal.CI.fssh2 import permutation_order_and_list, get_U_state
-            perm, order = permutation_order_and_list(hami.states, ne)
+            perm, order = permutation_order_and_list(ne)
             psi0_adiab = []
             for r0 in R0:
                 H, _ = hami.evaluate(R0[0], is_CI=False)
-                _, evecs = np.linalg.eigh(H)
+                _, evecs = LA.eigh(H)
                 # construct the U_state matrix
                 U_state = get_U_state(evecs, hami.states, perm, order)
                 psi0_adiab.append(np.dot(U_state.T.conj(), psi0_diab))

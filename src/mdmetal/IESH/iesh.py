@@ -231,19 +231,19 @@ def dynamics_one(
     R0: float,
     P0: float,
     c0: NDArray[np.complex128],
-    h_obj: NewnsAndersonHarmonic,
+    hamiltonian: NewnsAndersonHarmonic,
     tf: float,
     dt: float,
     n_quantum_steps: int = 1,   
     out_freq: int = 100,  
 ) -> Tuple[float, float, float, NDArray[np.complex128], NDArray[np.int64], NDArray[np.float64], NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
     # unpack some parameters
-    mass = h_obj.mass
-    ne = h_obj.ne
-    no = h_obj.no
+    mass = hamiltonian.mass
+    ne = hamiltonian.ne
+    no = hamiltonian.no
     
     # copy the initial conditions
-    hami = deepcopy(h_obj)
+    hami = deepcopy(hamiltonian)
     
     nsteps = int(tf / dt)
     n_out = int(nsteps / out_freq)
@@ -263,17 +263,17 @@ def dynamics_one(
     c = c0
     
     # random sampling of the initial state
-    state = []
+    # state = []
+    active_state = np.zeros(ne, dtype=np.int64)
+    active_state[:] = -1
     for ie in range(ne):
         cinit_i = c0[:, ie]
         prob_i = np.abs(cinit_i)**2
         # use the numpy random choice to sample the initial state
-        orbit_i = np.random.choice(no, p=prob_i)
-        state.append(orbit_i) 
-    active_state = np.array(state) 
-    # c = np.zeros((no, ne), dtype=np.complex128)
-    # for ie in range(ne):
-    #     c[active_state[ie], ie] = 1.0
+        orbit_i = -1
+        while np.any(orbit_i == active_state): # avoid duplicate orbitals for different electrons
+            orbit_i = np.random.choice(no, p=prob_i) 
+        active_state[ie] = orbit_i
         
     
     c, evals, evecs, d, F, v_dot_d, phase_corr, F0 = evaluate_hamiltonian_adiabatic(R, P, c, hami, None, None)
@@ -285,14 +285,14 @@ def dynamics_one(
             R_out[iout] = R
             P_out[iout] = P
             KE_out[iout] = 0.5 * P**2 / mass 
-            PE_out[iout] = np.sum(evals[active_state]) + h_obj.get_U0(R)
+            PE_out[iout] = np.sum(evals[active_state]) + hami.get_U0(R)
             pop_out[iout] = populations_iesh_landry(c, evecs, active_state)
             
         t, R, P, c, active_state, evals, evecs, d, F, v_dot_d, phase_corr, F0 = verlet_iesh(t, R, P, c, active_state, dt, hami, evals, evecs, d, v_dot_d, F, phase_corr, F0)
         # print(f"{np.sum(np.abs(c)**2, axis=0)=}")
         # print(f"{R=}, {P=}, {np.sum(np.abs(c)**2, axis=0)=}")
         
-    return t_out, R_out, P_out, KE_out, PE_out, pop_out
+    return t_out, R_out, P_out, pop_out, KE_out, PE_out 
 
 def _test_main():
     # parameters
