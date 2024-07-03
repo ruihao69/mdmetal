@@ -39,14 +39,14 @@ def evaluate_hamiltonian_adiabatic(
     
     evals, evecs = LA.eigh(H)
     
-    d, F, _ = evaluate_nonadiabatic_couplings_1d(grad_H, evals, evecs)
     
     phase_corr = get_phase_correction(last_evecs, evecs) if last_evecs is not None else np.ones(evecs.shape[1])
     evecs = evecs / phase_corr
+    d, F, _ = evaluate_nonadiabatic_couplings_1d(grad_H, evals, evecs)
     # print(f"{np.iscomplexobj(phase_corr)=}")  
-    evecs = evecs / phase_corr
-    d = phase_correct_nac(d, phase_corr)
-    c = c * (phase_corr / last_phase_corr)[:, None] if last_evecs is not None else c * phase_corr[:, None]
+    # evecs = evecs / phase_corr
+    # d = phase_correct_nac(d, phase_corr)
+    # c = c * (phase_corr / last_phase_corr)[:, None] if last_evecs is not None else c * phase_corr[:, None]
     
     # phase_corr = np.ones(evecs.shape[1])
     
@@ -318,7 +318,7 @@ def _test_main():
     
     psi0 = np.dot(evecs.T.conj(), psi0)
     
-    t, R, P, KE, PE, pop = dynamics_one(R0, P0, psi0, hamiltonian, tf=100000, dt=1, out_freq=100)
+    t, R, P, pop, KE, PE = dynamics_one(R0, P0, psi0, hamiltonian, tf=100000, dt=1, out_freq=100, n_quantum_steps=5)
     
     import matplotlib.pyplot as plt 
     fig = plt.figure(figsize=(10, 5), dpi=300)
